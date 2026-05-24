@@ -1,0 +1,13 @@
+{
+  "photos_dir": "z:/",
+  "cache_dir": "C:/source/Repos/photowall/cache",
+  "host": "127.0.0.1",
+  "port": 8000,
+  "thumb_width": 120,
+  "thumb_height": 90,
+  "board_cols": 80,
+  "related_window_seconds": 300,
+  "fade_ms": 2000,
+  "dwell_ms": 4000,
+  "show_caption": true
+}

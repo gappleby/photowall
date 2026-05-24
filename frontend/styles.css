@@ -1,0 +1,177 @@
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: #000;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  cursor: none;
+  font-family: sans-serif;
+}
+
+/* ── Overlay ── */
+
+#overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.75);
+  opacity: 1;
+  pointer-events: auto;
+  transition: opacity 0.6s ease;
+  z-index: 100;
+}
+
+#overlay.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+#overlay-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  color: #fff;
+  text-align: center;
+  width: min(480px, 90vw);
+}
+
+#overlay-title {
+  font-size: clamp(2rem, 6vw, 3.5rem);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+#overlay-status {
+  font-size: clamp(0.9rem, 2.5vw, 1.15rem);
+  opacity: 0.8;
+  min-height: 1.4em;
+}
+
+/* ── Progress bar ── */
+
+#progress-bar-wrap {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: #333;
+  overflow: hidden;
+}
+
+#progress-bar {
+  height: 100%;
+  width: 0%;
+  border-radius: 3px;
+  background: #fff;
+  transition: width 0.3s ease;
+}
+
+/* ── Scan button ── */
+
+#scan-btn {
+  margin-top: 8px;
+  padding: 10px 28px;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #fff;
+  background: transparent;
+  border: 2px solid #fff;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+#scan-btn:hover {
+  background: #fff;
+  color: #000;
+}
+
+/* ── Stage ── */
+
+#stage {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  background: #000;
+  overflow: hidden;
+}
+
+#wall-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* ── Photo frame (spotlight / cross-fade layer) ── */
+
+#photo-frame {
+  position: absolute;
+  top: 0;
+  left: 0;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 10;
+  overflow: hidden;
+}
+
+/* Images sit inside the photo area of the polaroid frame.
+   --frame-side and --frame-bottom are set in px by JS to match the current zoom scale. */
+#photo-img-a,
+#photo-img-b {
+  position: absolute;
+  top:    var(--frame-side,   0px);
+  left:   var(--frame-side,   0px);
+  width:  calc(100% - 2 * var(--frame-side,   0px));
+  height: calc(100% - var(--frame-side, 0px) - var(--frame-bottom, 0px));
+  object-fit: cover;
+}
+
+#photo-img-a { z-index: 1; }
+#photo-img-b { z-index: 2; opacity: 0; }
+
+/* Caption lives in the bottom white polaroid panel */
+#photo-caption {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: var(--frame-bottom, 0px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 0 10px;
+  z-index: 3;
+  pointer-events: none;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  color: #222;
+  box-sizing: border-box;
+}
+
+#caption-folder {
+  font-size: clamp(10px, calc(var(--frame-bottom, 20px) * 0.27), 28px);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  text-align: center;
+}
+
+#caption-date {
+  font-size: clamp(9px, calc(var(--frame-bottom, 20px) * 0.22), 22px);
+  font-weight: 400;
+  opacity: 0.65;
+  text-align: center;
+}

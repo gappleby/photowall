@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Photo Wall</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- Scanning overlay -->
+  <div id="overlay">
+    <div id="overlay-content">
+      <div id="overlay-title">Photo Wall</div>
+      <div id="overlay-status">Checking library…</div>
+      <div id="progress-bar-wrap">
+        <div id="progress-bar"></div>
+      </div>
+      <button id="scan-btn" style="display:none">Build Thumbnail Library</button>
+    </div>
+  </div>
+
+  <!-- Main stage: the virtual canvas lives here -->
+  <div id="stage">
+    <canvas id="wall-canvas"></canvas>
+
+    <!-- Overlay image used for zoom + colour presentation -->
+    <div id="photo-frame">
+      <img id="photo-img-a" src="" alt="" />
+      <img id="photo-img-b" src="" alt="" />
+      <div id="photo-caption">
+        <div id="caption-folder"></div>
+        <div id="caption-date"></div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

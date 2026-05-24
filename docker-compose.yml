@@ -1,0 +1,24 @@
+services:
+  photowall:
+    # Pull the pre-built image from GitHub Container Registry:
+    #   image: ghcr.io/YOUR_GITHUB_USERNAME/photowall:latest
+    # Or build locally (useful for development):
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      # --- Config ---
+      # Mount your own config.json to override all settings.
+      # The paths inside config.json (photos_dir, cache_dir) must be
+      # container paths that match the volume mounts below.
+      - ./config.json:/app/config.json:ro
+
+      # --- Photos (read-only) ---
+      # Must match "photos_dir" in your config.json.
+      # Example: if config says "photos_dir": "/photos", map your host folder here.
+      - /path/to/your/photos:/photos:ro
+
+      # --- Thumbnail cache (read-write, persisted across restarts) ---
+      # Must match "cache_dir" in your config.json.
+      - ./cache:/cache
+    restart: unless-stopped
