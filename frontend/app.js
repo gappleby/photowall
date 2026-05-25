@@ -111,6 +111,7 @@ let dwellMs      = 4000;   // ms — how long each colour photo is held before m
 // SHOWING_RELATED
 let relatedQueue = [];
 let relatedIndex = 0;
+let _relatedZoomTimer = null;
 
 // rAF handle
 let rafId = null;
@@ -384,6 +385,11 @@ function transitionTo(newState, thumbnails) {
     fadeStartTime = performance.now();
 
   } else if (newState === State.ZOOMING_OUT) {
+    if (_relatedZoomTimer !== null) { clearTimeout(_relatedZoomTimer); _relatedZoomTimer = null; }
+    photoImgA.style.transition = 'none';
+    photoImgA.style.transform  = '';
+    photoImgB.style.transition = 'none';
+    photoImgB.style.transform  = '';
     zoomStartScale = scale;
     zoomEndScale   = preZoomScale;
     zoomStartX     = worldX;
@@ -420,36 +426,66 @@ function showNextRelated() {
     return;
   }
 
+  // Alternate between two effects:
+  //   Even (0, 2, 4…): zoom IN 1→1.2×, pan NW 10%
+  //   Odd  (1, 3, 5…): zoom OUT 1.2→1×, pan from SE 10% back to centre
+  const isAlternate = relatedIndex % 2 === 1;
   const rel = relatedQueue[relatedIndex++];
 
-  // Load next photo into the top layer (imgB) while imgA stays fully visible
-  photoImgB.onload = null;
+  // Set imgB's initial transform BEFORE fading it in so it appears already at the
+  // correct starting position — no jump mid cross-fade.
+  //   Effect A: natural scale(1), no pan  → animation drives it to 1.2× NW
+  //   Effect B: scale(1.2) panned to SE  → animation drives it back to scale(1) centre
+  photoImgB.style.transition = 'none';
+  photoImgB.style.transform  = isAlternate ? 'scale(1.2) translate(-8.33%, -8.33%)' : '';
+  void photoImgB.offsetWidth;
   photoImgB.style.opacity = '0';
+  photoImgB.onload  = null;
+  photoImgB.onerror = null;
 
-  const crossFade = () => {
+  const run = () => {
+    // At 50% through the cross-fade, start the zoom/pan animation. Duration spans
+    // the remaining half of the fade plus the full dwell so it completes at promotion.
+    const zoomDuration = fadeDuration / 2 + dwellMs;
+    _relatedZoomTimer = setTimeout(() => {
+      _relatedZoomTimer = null;
+      photoImgB.style.transition = `transform ${zoomDuration}ms linear`;
+      photoImgB.style.transform  = isAlternate
+        ? 'scale(1) translate(0%, 0%)'          // zoom out, return to centre
+        : 'scale(1.2) translate(8.33%, 8.33%)'; // zoom in, pan to NW
+    }, fadeDuration / 2);
+
     fadeElement(photoImgB, 0, 1, fadeDuration, () => {
-      // Cross-fade complete — promote imgB to imgA so imgB is free for next.
-      photoImgA.src = photoImgB.src;
-      photoImgA.style.opacity = '1';
-      photoImgB.style.opacity = '0';
       updateCaption(rel);
-      setTimeout(showNextRelated, dwellMs);
+
+      // Wait the dwell — zoom finishes exactly now, then promote imgB → imgA
+      setTimeout(() => {
+        const imgBTransform = window.getComputedStyle(photoImgB).transform;
+        photoImgA.style.transition = 'none';
+        photoImgA.style.transform  = imgBTransform;
+        void photoImgA.offsetWidth;
+        photoImgA.src           = photoImgB.src;
+        photoImgA.style.opacity = '1';
+        photoImgB.style.transition = 'none';
+        photoImgB.style.transform  = '';
+        photoImgB.style.opacity    = '0';
+        showNextRelated();
+      }, dwellMs);
     });
   };
 
   photoImgB.src = `/api/photo/${rel.id}`;
   if (photoImgB.complete && photoImgB.naturalWidth > 0) {
-    crossFade();
+    run();
   } else {
     photoImgB.onload = () => {
-      photoImgB.onload = null;
+      photoImgB.onload  = null;
       photoImgB.onerror = null;
-      crossFade();
+      run();
     };
     photoImgB.onerror = () => {
-      photoImgB.onload = null;
+      photoImgB.onload  = null;
       photoImgB.onerror = null;
-      // Skip this related photo and try the next one
       setTimeout(showNextRelated, 0);
     };
   }
@@ -584,6 +620,7 @@ function tick(now) {
       if (t >= 1) {
         photoFrame.style.opacity = '0';
         photoFrame.style.display = 'none';
+        if (_relatedZoomTimer !== null) { clearTimeout(_relatedZoomTimer); _relatedZoomTimer = null; }
         photoImgA.src = '';
         photoImgB.src = '';
         transitionTo(State.ZOOMING_OUT);
