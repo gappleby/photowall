@@ -130,6 +130,14 @@ def _run(photos_dir: Path, cache_dir: Path, thumb_w: int, thumb_h: int, cols: in
     cell_w = dims["cell_w"]
     cell_h = dims["cell_h"]
 
+    # Cache datetimes from a previous scan so rescans don't reopen every source
+    # file on disk — critical for large libraries on network shares (NAS).
+    prior = load_metadata(cache_dir)
+    cached_datetimes: dict[str, str | None] = {}
+    if prior:
+        for rec in prior.get("thumbnails", []):
+            cached_datetimes[rec["id"]] = rec.get("datetime")
+
     photos = [
         p for p in sorted(photos_dir.rglob("*"))
         if p.suffix.lower() in EXTENSIONS and p.is_file()
@@ -152,15 +160,24 @@ def _run(photos_dir: Path, cache_dir: Path, thumb_w: int, thumb_h: int, cols: in
 
         dt = None
         if not thumb_path.exists():
+            # New photo — generate thumbnail (also returns EXIF datetime)
             try:
                 dt = _make_thumb(photo, thumb_path, thumb_w, thumb_h)
             except Exception:
-                # skip unreadable files
                 with _lock:
                     _state["done"] = i + 1
                     _state["progress"] = (i + 1) / total
                 continue
+        elif photo_id in cached_datetimes:
+            # Existing thumbnail with a known datetime — reuse it without
+            # touching the source file (avoids thousands of network reads on NAS)
+            raw = cached_datetimes[photo_id]
+            try:
+                dt = datetime.fromisoformat(raw) if raw else None
+            except Exception:
+                dt = None
         else:
+            # Existing thumbnail but no cached datetime — read from source once
             try:
                 with Image.open(photo) as img:
                     dt = _exif_datetime(img)
@@ -191,6 +208,15 @@ def _run(photos_dir: Path, cache_dir: Path, thumb_w: int, thumb_h: int, cols: in
         with _lock:
             _state["done"] = i + 1
             _state["progress"] = (i + 1) / total
+
+    # Remove thumbnails for photos that no longer exist on disk
+    current_ids = {r["id"] for r in records}
+    for thumb_file in thumbs_dir.glob("*.jpg"):
+        if thumb_file.stem not in current_ids:
+            try:
+                thumb_file.unlink()
+            except Exception:
+                pass
 
     _write_metadata(cache_dir, records, cols, thumb_w, thumb_h, dims, photos_dir)
     with _lock:

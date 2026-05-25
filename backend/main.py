@@ -1,6 +1,8 @@
 import io
 import mimetypes
 import threading
+import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -12,7 +14,46 @@ from PIL import Image, ImageOps
 from . import scanner
 from .config import CFG
 
-app = FastAPI(title="Photowall API")
+
+# ---------------------------------------------------------------------------
+# Background auto-scan loop
+# ---------------------------------------------------------------------------
+
+def _scan_args():
+    return (
+        CFG["photos_dir"],
+        CFG["cache_dir"],
+        CFG["thumb_width"],
+        CFG["thumb_height"],
+        CFG["board_cols"],
+    )
+
+
+def _auto_scan_loop():
+    """Runs once on startup, then repeats every auto_scan_hours.
+    Set auto_scan_hours to 0 in config.json to disable periodic rescanning
+    (a single startup scan still runs)."""
+    interval_hours = CFG.get("auto_scan_hours", 4)
+
+    # Always scan on startup so a server restart picks up new photos
+    scanner.scan(*_scan_args())
+
+    if interval_hours <= 0:
+        return
+
+    interval_secs = int(interval_hours) * 3600
+    while True:
+        time.sleep(interval_secs)
+        scanner.scan(*_scan_args())
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    threading.Thread(target=_auto_scan_loop, daemon=True).start()
+    yield
+
+
+app = FastAPI(title="Photowall API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -40,9 +81,10 @@ def chrome_devtools():
 @app.get("/api/config")
 def get_config():
     return {
-        "fade_ms":      CFG.get("fade_ms",      2000),
-        "dwell_ms":     CFG.get("dwell_ms",     4000),
-        "show_caption": CFG.get("show_caption", True),
+        "fade_ms":         CFG.get("fade_ms",         2000),
+        "dwell_ms":        CFG.get("dwell_ms",        4000),
+        "show_caption":    CFG.get("show_caption",    True),
+        "auto_scan_hours": CFG.get("auto_scan_hours", 4),
     }
 
 

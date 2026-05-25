@@ -7,7 +7,8 @@
 body {
   background: #000;
   width: 100vw;
-  height: 100vh;
+  height: 100vh;      /* fallback for browsers without dvh support */
+  height: 100dvh;     /* iOS Safari: matches current visible area, not the large viewport */
   overflow: hidden;
   cursor: none;
   font-family: sans-serif;
@@ -99,7 +100,8 @@ body {
 #stage {
   position: relative;
   width: 100vw;
-  height: 100vh;
+  height: 100vh;      /* fallback */
+  height: 100dvh;
   background: #000;
   overflow: hidden;
 }

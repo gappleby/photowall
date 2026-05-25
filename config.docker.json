@@ -9,5 +9,6 @@
   "related_window_seconds": 300,
   "fade_ms": 2000,
   "dwell_ms": 4000,
-  "show_caption": true
+  "show_caption": true,
+  "auto_scan_hours": 4
 }

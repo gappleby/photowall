@@ -45,8 +45,16 @@ let state = State.LOADING;
 let wall = null;
 
 // Viewport / world
-let viewW = window.innerWidth;
-let viewH = window.innerHeight;
+// visualViewport is the authoritative visible size on iOS Safari;
+// window.innerWidth/Height can equal the large viewport (behind browser chrome).
+function _vpSize() {
+  const vp = window.visualViewport;
+  return {
+    w: Math.round(vp ? vp.width  : window.innerWidth),
+    h: Math.round(vp ? vp.height : window.innerHeight),
+  };
+}
+let { w: viewW, h: viewH } = _vpSize();
 
 // Board dimensions (filled from metadata)
 let boardW = 0;
@@ -193,14 +201,15 @@ function updateCaption(thumb) {
 // Resize handler
 // ---------------------------------------------------------------------------
 function onResize() {
-  viewW = window.innerWidth;
-  viewH = window.innerHeight;
+  ({ w: viewW, h: viewH } = _vpSize());
   canvasEl.width  = viewW;
   canvasEl.height = viewH;
   // WallCanvas reads canvas.width/height dynamically — no resize call needed
 }
 
 window.addEventListener('resize', onResize);
+// visualViewport fires its own resize on iOS Safari when the toolbar shows/hides
+window.visualViewport?.addEventListener('resize', onResize);
 
 // ---------------------------------------------------------------------------
 // Scan button
