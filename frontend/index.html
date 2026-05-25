@@ -25,8 +25,11 @@
 
     <!-- Overlay image used for zoom + colour presentation -->
     <div id="photo-frame">
-      <img id="photo-img-a" src="" alt="" />
-      <img id="photo-img-b" src="" alt="" />
+      <!-- Clips Ken Burns transforms to the photo area; never bleeds into white borders -->
+      <div id="photo-photo-area">
+        <img id="photo-img-a" src="" alt="" />
+        <img id="photo-img-b" src="" alt="" />
+      </div>
       <div id="photo-caption">
         <div id="caption-folder"></div>
         <div id="caption-date"></div>

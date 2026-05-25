@@ -78,14 +78,11 @@ def _make_thumb(src: Path, dst: Path, w: int, h: int):
         # Correct orientation — handles all 8 EXIF orientation values including flips
         img = ImageOps.exif_transpose(img)
         img = img.convert("RGB")
-        img.thumbnail((w, h), Image.LANCZOS)
-        # Pad to exact size so grid alignment is consistent
-        canvas = Image.new("L", (w, h), 20)
-        ox = (w - img.width) // 2
-        oy = (h - img.height) // 2
-        gray = img.convert("L")
-        canvas.paste(gray, (ox, oy))
-        canvas.save(dst, "JPEG", quality=75, optimize=True)
+        # Cover-crop to exactly w×h — same behaviour as CSS object-fit:cover so the
+        # B&W thumbnail and the colour overlay show the identical portion of the photo,
+        # eliminating the visible jump at the start of the colour cross-fade.
+        img = ImageOps.fit(img, (w, h), Image.LANCZOS)
+        img.convert("L").save(dst, "JPEG", quality=75, optimize=True)
     return dt
 
 

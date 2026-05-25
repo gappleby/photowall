@@ -126,15 +126,23 @@ body {
   overflow: hidden;
 }
 
-/* Images sit inside the photo area of the polaroid frame.
-   --frame-side and --frame-bottom are set in px by JS to match the current zoom scale. */
-#photo-img-a,
-#photo-img-b {
+/* Clips Ken Burns transforms to the photo area (excludes polaroid borders). */
+#photo-photo-area {
   position: absolute;
   top:    var(--frame-side,   0px);
   left:   var(--frame-side,   0px);
   width:  calc(100% - 2 * var(--frame-side,   0px));
   height: calc(100% - var(--frame-side, 0px) - var(--frame-bottom, 0px));
+  overflow: hidden;
+}
+
+#photo-img-a,
+#photo-img-b {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
   object-fit: cover;
 }
 

@@ -1,7 +1,7 @@
 {
   "photos_dir": "z:/",
   "cache_dir": "C:/source/Repos/photowall/cache",
-  "host": "127.0.0.1",
+  "host": "0.0.0.0",
   "port": 8000,
   "thumb_width": 120,
   "thumb_height": 90,

@@ -365,6 +365,7 @@ function transitionTo(newState, thumbnails) {
     photoImgB.style.opacity = '0';
 
     updateCaption(targetThumb);
+
     photoImgA.onload = () => {
       photoImgA.onload = null;
       photoImgA.onerror = null;
@@ -427,7 +428,7 @@ function showNextRelated() {
 
   const crossFade = () => {
     fadeElement(photoImgB, 0, 1, fadeDuration, () => {
-      // Cross-fade complete — promote imgB to imgA so imgB is free for next
+      // Cross-fade complete — promote imgB to imgA so imgB is free for next.
       photoImgA.src = photoImgB.src;
       photoImgA.style.opacity = '1';
       photoImgB.style.opacity = '0';
