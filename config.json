@@ -10,5 +10,6 @@
   "fade_ms": 2000,
   "dwell_ms": 4000,
   "show_caption": true,
+  "zoom_pan": true,
   "auto_scan_hours": 4
 }

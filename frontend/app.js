@@ -66,6 +66,7 @@ let boardFrameBottom = 0; // white border on bottom (polaroid label area)
 
 // Caption config
 let showCaption = true;
+let zoomPan = true;
 
 // Current world position and scale
 let worldX = 0;
@@ -437,7 +438,7 @@ function showNextRelated() {
   //   Effect A: natural scale(1), no pan  → animation drives it to 1.2× NW
   //   Effect B: scale(1.2) panned to SE  → animation drives it back to scale(1) centre
   photoImgB.style.transition = 'none';
-  photoImgB.style.transform  = isAlternate ? 'scale(1.2) translate(-8.33%, -8.33%)' : '';
+  photoImgB.style.transform  = (zoomPan && isAlternate) ? 'scale(1.2) translate(-8.33%, -8.33%)' : '';
   void photoImgB.offsetWidth;
   photoImgB.style.opacity = '0';
   photoImgB.onload  = null;
@@ -447,13 +448,15 @@ function showNextRelated() {
     // At 50% through the cross-fade, start the zoom/pan animation. Duration spans
     // the remaining half of the fade plus the full dwell so it completes at promotion.
     const zoomDuration = fadeDuration / 2 + dwellMs;
-    _relatedZoomTimer = setTimeout(() => {
-      _relatedZoomTimer = null;
-      photoImgB.style.transition = `transform ${zoomDuration}ms linear`;
-      photoImgB.style.transform  = isAlternate
-        ? 'scale(1) translate(0%, 0%)'          // zoom out, return to centre
-        : 'scale(1.2) translate(8.33%, 8.33%)'; // zoom in, pan to NW
-    }, fadeDuration / 2);
+    if (zoomPan) {
+      _relatedZoomTimer = setTimeout(() => {
+        _relatedZoomTimer = null;
+        photoImgB.style.transition = `transform ${zoomDuration}ms linear`;
+        photoImgB.style.transform  = isAlternate
+          ? 'scale(1) translate(0%, 0%)'          // zoom out, return to centre
+          : 'scale(1.2) translate(8.33%, 8.33%)'; // zoom in, pan to NW
+      }, fadeDuration / 2);
+    }
 
     fadeElement(photoImgB, 0, 1, fadeDuration, () => {
       updateCaption(rel);
@@ -676,6 +679,7 @@ function init() {
       if (cfg.fade_ms      != null) fadeDuration = cfg.fade_ms;
       if (cfg.dwell_ms     != null) dwellMs      = cfg.dwell_ms;
       if (cfg.show_caption != null) showCaption  = cfg.show_caption;
+      if (cfg.zoom_pan     != null) zoomPan      = cfg.zoom_pan;
       captionEl.style.display = showCaption ? '' : 'none';
 
       if (data.status === 'ready' || data.has_metadata) {

@@ -84,6 +84,7 @@ def get_config():
         "fade_ms":         CFG.get("fade_ms",         2000),
         "dwell_ms":        CFG.get("dwell_ms",        4000),
         "show_caption":    CFG.get("show_caption",    True),
+        "zoom_pan":        CFG.get("zoom_pan",        True),
         "auto_scan_hours": CFG.get("auto_scan_hours", 4),
     }
 

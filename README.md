@@ -8,7 +8,7 @@ A browser-based photo wall that recreates the Windows 7 Media Center slideshow e
 
 ## How it works
 
-- A Python/FastAPI backend scans your photos folder recursively, generates B&W JPEG thumbnails, and writes `metadata.json` into a separate cache directory.
+- A Python/FastAPI backend scans your photos folder recursively, generates B&W JPEG thumbnails using a cover-crop (matching `object-fit: cover`) so the thumbnail and the colour overlay always show the same portion of the photo, and writes `metadata.json` into a separate cache directory.
 - The browser renders a virtual canvas — only thumbnails currently visible on screen are loaded, keeping memory low even with thousands of photos.
 - The presentation runs as a continuous animation loop:
 
@@ -16,13 +16,24 @@ A browser-based photo wall that recreates the Windows 7 Media Center slideshow e
   2. **Pan** — smoothly slides to bring a chosen thumbnail near centre
   3. **Zoom in** — scales the thumbnail to 80% of the screen
   4. **Colour fade** — cross-fades from the B&W thumbnail to the full-resolution colour photo
-  5. **Related photos** — any photos taken within ±5 minutes cross-fade between each other without returning to B&W
+  5. **Related photos** — any photos taken within ±5 minutes cross-fade between each other with alternating zoom/pan effects (see below)
   6. **Fade out** — cross-fades back to the B&W thumbnail
   7. **Zoom out** — returns to the collage and repeats
 
 - Each photo in the collage is styled as a polaroid with a white frame, a larger bottom border, and a black gap between cards.
 - An optional caption in the bottom white panel shows the folder name and date of the photo being displayed.
 - Video files are never included. Non-browser-renderable formats (TIFF, BMP, HEIC) are automatically transcoded to JPEG by the server.
+
+### Related photo zoom/pan effects
+
+When related photos cross-fade, each photo gets a slow zoom and pan that starts halfway through the cross-fade and completes at the end of the dwell period. The two effects alternate:
+
+| Photo in sequence | Start state | End state | Effect |
+|---|---|---|---|
+| 1st, 3rd, 5th … | Scale 1×, centred | Scale 1.2×, panned NW 10% | Zooms in toward the top-left corner |
+| 2nd, 4th … | Scale 1.2×, panned to SE 10% | Scale 1×, centred | Zooms out from the bottom-right corner |
+
+The zoom is clipped to the photo area so it never bleeds into the white polaroid border.
 
 ---
 
@@ -82,6 +93,8 @@ All settings live in `config.json` in the project root.
 | `fade_ms` | `2000` | Duration of every cross-fade transition in milliseconds |
 | `dwell_ms` | `4000` | How long each colour photo is held before the next cross-fade |
 | `show_caption` | `true` | Show folder name and date in the bottom polaroid panel |
+| `zoom_pan` | `true` | Enable the alternating zoom/pan effect on related photos |
+| `auto_scan_hours` | `4` | Automatically rescan in the background every N hours. Set to `0` to disable. |
 
 ### Rescanning
 
@@ -90,7 +103,9 @@ If you add photos, click **Build Thumbnail Library** in the browser overlay, or 
 curl -X POST http://127.0.0.1:8000/api/scan
 ```
 
-The cache directory can be deleted entirely at any time — it will be rebuilt on the next scan.
+The scanner is incremental — only new photos get thumbnails generated; existing thumbnails are reused. The cache directory can be deleted entirely at any time and will be rebuilt on the next scan.
+
+> **Note:** If you were running a version prior to the cover-crop thumbnail change, delete the cache directory and rescan. Old thumbnails were letterboxed with grey padding, which caused a visible mismatch with the colour photo overlay on non-4:3 images.
 
 ---
 
@@ -271,7 +286,7 @@ photowall/
 |---|---|
 | `GET /api/status` | Scan status and progress |
 | `POST /api/scan` | Trigger a new scan |
-| `GET /api/config` | Returns `fade_ms`, `dwell_ms`, `show_caption` |
+| `GET /api/config` | Returns `fade_ms`, `dwell_ms`, `show_caption`, `zoom_pan`, `auto_scan_hours` |
 | `GET /api/metadata` | Full board layout and thumbnail records |
 | `GET /api/thumb/{id}` | B&W thumbnail JPEG |
 | `GET /api/photo/{id}` | Full-resolution colour photo (transcoded to JPEG if needed) |
