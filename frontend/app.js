@@ -114,6 +114,12 @@ let relatedQueue = [];
 let relatedIndex = 0;
 let _relatedZoomTimer = null;
 
+// Frame shape — the zoomed polaroid morphs from the 4:3 thumbnail shape to the
+// photo's own aspect ratio, and back again before fading out.
+/** @type {{cx: number, cy: number, pw: number, ph: number}|null} */
+let frameShape = null;   // screen px: polaroid centre + photo-area size
+let _morphRaf = null;
+
 // rAF handle
 let rafId = null;
 
@@ -159,24 +165,87 @@ function zoomScaleForThumb(thumb) {
   return Math.min((viewW * 0.8) / thumb.w, (viewH * 0.8) / thumb.h);
 }
 
-/** Position #photo-frame over the full polaroid (white border + photo area + label). */
-function positionPhotoFrame(thumb) {
+/** Frame shape exactly covering the thumbnail's polaroid on the canvas. */
+function thumbFrameShape(thumb) {
   // thumb.x/y is the polaroid top-left; thumb.w/h is the full polaroid size
-  const screenX = (thumb.x - worldX) * scale;
-  const screenY = (thumb.y - worldY) * scale;
-  const screenW = thumb.w * scale;
-  const screenH = thumb.h * scale;
+  return {
+    cx: (thumb.x + thumb.w / 2 - worldX) * scale,
+    cy: (thumb.y + thumb.h / 2 - worldY) * scale,
+    pw: boardThumbW * scale,
+    ph: boardThumbH * scale,
+  };
+}
 
-  photoFrame.style.left   = `${screenX}px`;
-  photoFrame.style.top    = `${screenY}px`;
-  photoFrame.style.width  = `${screenW}px`;
-  photoFrame.style.height = `${screenH}px`;
+/** Frame shape whose photo area has the given aspect ratio, contain-fit to 80% of the screen. */
+function fittedFrameShape(aspect) {
+  const fs = boardFrameSide   * scale;
+  const fb = boardFrameBottom * scale;
+  const pw = Math.min(viewW * 0.8 - 2 * fs, (viewH * 0.8 - fs - fb) * aspect);
+  return { cx: viewW / 2, cy: viewH / 2, pw, ph: pw / aspect };
+}
+
+function imgAspect(img) {
+  return img.naturalWidth > 0 && img.naturalHeight > 0
+    ? img.naturalWidth / img.naturalHeight
+    : boardThumbW / boardThumbH;
+}
+
+/** Position #photo-frame (white border + photo area + label) from a frame shape. */
+function applyFrameShape(shape) {
+  frameShape = shape;
+  const fs = boardFrameSide   * scale;
+  const fb = boardFrameBottom * scale;
+  const w  = shape.pw + 2 * fs;
+  const h  = shape.ph + fs + fb;
+
+  photoFrame.style.left   = `${shape.cx - w / 2}px`;
+  photoFrame.style.top    = `${shape.cy - h / 2}px`;
+  photoFrame.style.width  = `${w}px`;
+  photoFrame.style.height = `${h}px`;
 
   // CSS custom properties let the child imgs and caption size themselves correctly
-  const fs = `${boardFrameSide   * scale}px`;
-  const fb = `${boardFrameBottom * scale}px`;
-  photoFrame.style.setProperty('--frame-side',   fs);
-  photoFrame.style.setProperty('--frame-bottom', fb);
+  photoFrame.style.setProperty('--frame-side',   `${fs}px`);
+  photoFrame.style.setProperty('--frame-bottom', `${fb}px`);
+}
+
+/** Position #photo-frame over the thumbnail's polaroid. */
+function positionPhotoFrame(thumb) {
+  applyFrameShape(thumbFrameShape(thumb));
+}
+
+function cancelMorph() {
+  if (_morphRaf !== null) { cancelAnimationFrame(_morphRaf); _morphRaf = null; }
+}
+
+/** Animate the frame to a new shape. Images stay object-fit: cover, so cropped
+ *  parts of the photo are revealed smoothly as the frame reaches its aspect ratio. */
+function morphFrame(to, durationMs, onDone) {
+  cancelMorph();
+  const from = frameShape;
+  const same = !from || ['cx', 'cy', 'pw', 'ph'].every(k => Math.abs(from[k] - to[k]) < 1);
+  if (same || durationMs <= 0) {
+    applyFrameShape(to);
+    if (onDone) onDone();
+    return;
+  }
+  const start = performance.now();
+  function step(now) {
+    const t = Math.min(1, (now - start) / durationMs);
+    const e = easeInOutCubic(t);
+    applyFrameShape({
+      cx: from.cx + (to.cx - from.cx) * e,
+      cy: from.cy + (to.cy - from.cy) * e,
+      pw: from.pw + (to.pw - from.pw) * e,
+      ph: from.ph + (to.ph - from.ph) * e,
+    });
+    if (t < 1) {
+      _morphRaf = requestAnimationFrame(step);
+    } else {
+      _morphRaf = null;
+      if (onDone) onDone();
+    }
+  }
+  _morphRaf = requestAnimationFrame(step);
 }
 
 /** Populate the caption with folder name and date from a thumbnail record. */
@@ -383,10 +452,15 @@ function transitionTo(newState, thumbnails) {
     photoImgA.src = `/api/photo/${targetThumb.id}`;
 
   } else if (newState === State.COLOR_OUT) {
+    // Frame is back over the thumbnail, so the canvas can draw it again
+    wall.setHiddenId(null);
     fadeStartTime = performance.now();
 
   } else if (newState === State.ZOOMING_OUT) {
     if (_relatedZoomTimer !== null) { clearTimeout(_relatedZoomTimer); _relatedZoomTimer = null; }
+    cancelMorph();
+    frameShape = null;
+    wall.setHiddenId(null);
     photoImgA.style.transition = 'none';
     photoImgA.style.transform  = '';
     photoImgB.style.transition = 'none';
@@ -402,17 +476,18 @@ function transitionTo(newState, thumbnails) {
   } else if (newState === State.SHOWING_RELATED) {
     relatedQueue = [];
     relatedIndex = 0;
-    // Fetch related then drive the sub-sequence
-    fetch(`/api/related/${targetThumb.id}?window=300`)
+    // Reshape the frame to the photo's aspect ratio while fetching related photos,
+    // then drive the sub-sequence once both are done
+    const morphed = new Promise(resolve =>
+      morphFrame(fittedFrameShape(imgAspect(photoImgA)), fadeDuration / 2, resolve));
+    const related = fetch(`/api/related/${targetThumb.id}`)
       .then(r => r.json())
-      .then(related => {
-        relatedQueue = Array.isArray(related) ? related.slice(0, 5) : [];
-        showNextRelated();
-      })
-      .catch(() => {
-        relatedQueue = [];
-        showNextRelated();
-      });
+      .then(rel => Array.isArray(rel) ? rel.slice(0, 5) : [])
+      .catch(() => []);
+    Promise.all([related, morphed]).then(([rel]) => {
+      relatedQueue = rel;
+      showNextRelated();
+    });
   }
 }
 
@@ -422,8 +497,12 @@ function transitionTo(newState, thumbnails) {
 function showNextRelated() {
   if (relatedIndex >= relatedQueue.length) {
     // All related shown (or none) — wait then fade the whole frame back to B&W
+    // Then return the frame to the thumbnail's shape so the fade lands cleanly on it
     const dwell = relatedQueue.length === 0 ? dwellMs : Math.round(fadeDuration / 2);
-    setTimeout(() => transitionTo(State.COLOR_OUT), dwell);
+    setTimeout(() => {
+      morphFrame(thumbFrameShape(targetThumb), fadeDuration / 2,
+                 () => transitionTo(State.COLOR_OUT));
+    }, dwell);
     return;
   }
 
@@ -458,6 +537,7 @@ function showNextRelated() {
       }, fadeDuration / 2);
     }
 
+    morphFrame(fittedFrameShape(imgAspect(photoImgB)), fadeDuration);
     fadeElement(photoImgB, 0, 1, fadeDuration, () => {
       updateCaption(rel);
 
@@ -601,6 +681,8 @@ function tick(now) {
         photoFrame.style.opacity = String(easeInOutCubic(t));
         if (t >= 1) {
           photoFrame.style.opacity = '1';
+          // Frame now fully covers the thumbnail; hide it so reshaping doesn't expose it
+          wall.setHiddenId(targetThumb.id);
           transitionTo(State.SHOWING_RELATED);
         }
       }

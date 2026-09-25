@@ -26,7 +26,33 @@ def _scan_args():
         CFG["thumb_width"],
         CFG["thumb_height"],
         CFG["board_cols"],
+        CFG.get("mtime_fallback", False),
+        CFG.get("shuffle_wall", True),
     )
+
+
+# ---------------------------------------------------------------------------
+# In-memory metadata cache — reloaded only when metadata.json changes on disk
+# ---------------------------------------------------------------------------
+
+_meta_lock = threading.Lock()
+_meta_cache = {"mtime": None, "meta": None, "by_id": {}}
+
+
+def _get_metadata() -> tuple[dict | None, dict]:
+    """Returns (metadata, {id: record}), or (None, {}) if no scan has completed."""
+    path = CFG["cache_dir"] / "metadata.json"
+    try:
+        mtime = path.stat().st_mtime_ns
+    except FileNotFoundError:
+        return None, {}
+    with _meta_lock:
+        if _meta_cache["mtime"] != mtime:
+            meta = scanner.load_metadata(CFG["cache_dir"])
+            _meta_cache["meta"] = meta
+            _meta_cache["by_id"] = {t["id"]: t for t in meta["thumbnails"]} if meta else {}
+            _meta_cache["mtime"] = mtime
+        return _meta_cache["meta"], _meta_cache["by_id"]
 
 
 def _auto_scan_loop():
@@ -96,31 +122,20 @@ def get_config():
 @app.get("/api/status")
 def status():
     state = scanner.get_state()
-    meta = scanner.load_metadata(CFG["cache_dir"])
-    state["has_metadata"] = meta is not None
+    state["has_metadata"] = (CFG["cache_dir"] / "metadata.json").exists()
     return state
 
 
 @app.post("/api/scan")
 def start_scan():
-    t = threading.Thread(
-        target=scanner.scan,
-        args=(
-            CFG["photos_dir"],
-            CFG["cache_dir"],
-            CFG["thumb_width"],
-            CFG["thumb_height"],
-            CFG["board_cols"],
-        ),
-        daemon=True,
-    )
+    t = threading.Thread(target=scanner.scan, args=_scan_args(), daemon=True)
     t.start()
     return {"started": True}
 
 
 @app.get("/api/metadata")
 def metadata():
-    meta = scanner.load_metadata(CFG["cache_dir"])
+    meta, _ = _get_metadata()
     if meta is None:
         raise HTTPException(404, "No metadata — run /api/scan first")
     return meta
@@ -144,10 +159,10 @@ _BROWSER_NATIVE = frozenset({".jpg", ".jpeg", ".png", ".gif", ".webp"})
 
 @app.get("/api/photo/{photo_id}")
 def photo(photo_id: str):
-    meta = scanner.load_metadata(CFG["cache_dir"])
+    meta, by_id = _get_metadata()
     if meta is None:
         raise HTTPException(404, "No metadata")
-    record = next((t for t in meta["thumbnails"] if t["id"] == photo_id), None)
+    record = by_id.get(photo_id)
     if record is None:
         raise HTTPException(404, "Photo not found")
     path = CFG["photos_dir"] / record["path"]
@@ -183,11 +198,13 @@ def photo(photo_id: str):
 
 
 @app.get("/api/related/{photo_id}")
-def related(photo_id: str, window: int = 300):
-    meta = scanner.load_metadata(CFG["cache_dir"])
+def related(photo_id: str, window: int | None = None):
+    meta, by_id = _get_metadata()
     if meta is None:
         raise HTTPException(404, "No metadata")
-    target = next((t for t in meta["thumbnails"] if t["id"] == photo_id), None)
+    if window is None:
+        window = CFG.get("related_window_seconds", 300)
+    target = by_id.get(photo_id)
     if target is None:
         raise HTTPException(404, "Photo not found")
 
@@ -209,4 +226,14 @@ def related(photo_id: str, window: int = 300):
 # Serve frontend
 # ---------------------------------------------------------------------------
 
-app.mount("/", StaticFiles(directory=str(_FRONTEND), html=True), name="frontend")
+class _RevalidatingStaticFiles(StaticFiles):
+    """Makes browsers revalidate frontend files on every load (cheap 304 when
+    unchanged) so an updated app.js is never masked by a heuristically cached copy."""
+
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
+app.mount("/", _RevalidatingStaticFiles(directory=str(_FRONTEND), html=True), name="frontend")

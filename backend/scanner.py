@@ -5,9 +5,10 @@ Runs in a background thread so the API stays responsive during scanning.
 import hashlib
 import json
 import math
+import os
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from PIL import Image, ExifTags, ImageOps
@@ -51,7 +52,14 @@ def _set(key, value):
         _state[key] = value
 
 
-def _photo_id(path: Path) -> str:
+def _photo_id(rel_path: Path) -> str:
+    # Hash the path relative to photos_dir (POSIX form) so IDs survive moving the
+    # library or changing the mount point, and match between Windows and Docker.
+    return hashlib.sha1(rel_path.as_posix().encode()).hexdigest()[:16]
+
+
+def _legacy_photo_id(path: Path) -> str:
+    # Older versions hashed the absolute path; used only to migrate existing thumbnails.
     return hashlib.sha1(str(path).encode()).hexdigest()[:16]
 
 
@@ -86,14 +94,15 @@ def _make_thumb(src: Path, dst: Path, w: int, h: int):
     return dt
 
 
-def scan(photos_dir: Path, cache_dir: Path, thumb_w: int, thumb_h: int, cols: int):
+def scan(photos_dir: Path, cache_dir: Path, thumb_w: int, thumb_h: int, cols: int,
+         mtime_fallback: bool = False, shuffle: bool = True):
     with _lock:
         if _state["status"] == "scanning":
             return
         _state.update({"status": "scanning", "progress": 0.0, "done": 0, "error": None})
 
     try:
-        _run(photos_dir, cache_dir, thumb_w, thumb_h, cols)
+        _run(photos_dir, cache_dir, thumb_w, thumb_h, cols, mtime_fallback, shuffle)
     except Exception as exc:
         with _lock:
             _state.update({"status": "error", "error": str(exc)})
@@ -119,7 +128,8 @@ def _polaroid_dims(thumb_w: int, thumb_h: int) -> dict:
     )
 
 
-def _run(photos_dir: Path, cache_dir: Path, thumb_w: int, thumb_h: int, cols: int):
+def _run(photos_dir: Path, cache_dir: Path, thumb_w: int, thumb_h: int, cols: int,
+         mtime_fallback: bool, shuffle: bool):
     thumbs_dir = cache_dir / "thumbs"
     thumbs_dir.mkdir(exist_ok=True)
 
@@ -127,18 +137,23 @@ def _run(photos_dir: Path, cache_dir: Path, thumb_w: int, thumb_h: int, cols: in
     cell_w = dims["cell_w"]
     cell_h = dims["cell_h"]
 
-    # Cache datetimes from a previous scan so rescans don't reopen every source
+    # Cache EXIF datetimes from a previous scan so rescans don't reopen every source
     # file on disk — critical for large libraries on network shares (NAS).
+    # Older metadata has no "exif_datetime" key; its "datetime" was always EXIF.
     prior = load_metadata(cache_dir)
     cached_datetimes: dict[str, str | None] = {}
     if prior:
         for rec in prior.get("thumbnails", []):
-            cached_datetimes[rec["id"]] = rec.get("datetime")
+            cached_datetimes[rec["id"]] = rec.get("exif_datetime", rec.get("datetime"))
 
     photos = [
         p for p in sorted(photos_dir.rglob("*"))
         if p.suffix.lower() in EXTENSIONS and p.is_file()
     ]
+    if shuffle:
+        # Order by photo ID (a path hash): effectively random, so photos from the same
+        # shoot are scattered across the wall, but stable across rescans.
+        photos.sort(key=lambda p: _photo_id(p.relative_to(photos_dir)))
 
     total = len(photos)
     _set("total", total)
@@ -152,8 +167,21 @@ def _run(photos_dir: Path, cache_dir: Path, thumb_w: int, thumb_h: int, cols: in
     records = []
 
     for i, photo in enumerate(photos):
-        photo_id = _photo_id(photo)
+        rel_path = photo.relative_to(photos_dir)
+        photo_id = _photo_id(rel_path)
         thumb_path = thumbs_dir / f"{photo_id}.jpg"
+
+        if not thumb_path.exists():
+            # Migrate a thumbnail generated under the old absolute-path ID scheme
+            legacy_id = _legacy_photo_id(photo)
+            legacy_thumb = thumbs_dir / f"{legacy_id}.jpg"
+            if legacy_thumb.exists():
+                try:
+                    legacy_thumb.rename(thumb_path)
+                    if legacy_id in cached_datetimes:
+                        cached_datetimes[photo_id] = cached_datetimes[legacy_id]
+                except Exception:
+                    pass
 
         dt = None
         if not thumb_path.exists():
@@ -181,9 +209,15 @@ def _run(photos_dir: Path, cache_dir: Path, thumb_w: int, thumb_h: int, cols: in
             except Exception:
                 pass
 
+        exif_dt = dt
+        if dt is None and mtime_fallback:
+            try:
+                dt = datetime.fromtimestamp(photo.stat().st_mtime)
+            except Exception:
+                pass
+
         col = i % cols
         row = i // cols
-        rel_path = photo.relative_to(photos_dir)
         folder = str(rel_path.parent) if rel_path.parent != Path(".") else ""
 
         records.append({
@@ -198,8 +232,10 @@ def _run(photos_dir: Path, cache_dir: Path, thumb_w: int, thumb_h: int, cols: in
             "h": dims["polaroid_h"],
             "path": str(rel_path).replace("\\", "/"),
             "folder": folder,
+            # datetime/datetime_ts = effective date (EXIF, else file mtime if enabled)
             "datetime": dt.isoformat() if dt else None,
             "datetime_ts": int(dt.timestamp()) if dt else None,
+            "exif_datetime": exif_dt.isoformat() if exif_dt else None,
         })
 
         with _lock:
@@ -225,7 +261,7 @@ def _write_metadata(cache_dir, records, cols, thumb_w, thumb_h, dims, photos_dir
     cell_w = dims["cell_w"]
     cell_h = dims["cell_h"]
     meta = {
-        "generated_at": datetime.utcnow().isoformat(),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
         "photos_dir": str(photos_dir),
         "board": {
             "cols": cols,
@@ -239,7 +275,11 @@ def _write_metadata(cache_dir, records, cols, thumb_w, thumb_h, dims, photos_dir
         },
         "thumbnails": records,
     }
-    (cache_dir / "metadata.json").write_text(json.dumps(meta, indent=2))
+    # Write atomically so the API never reads a half-written file mid-scan
+    path = cache_dir / "metadata.json"
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(meta, indent=2))
+    os.replace(tmp, path)
 
 
 def load_metadata(cache_dir: Path) -> dict | None:

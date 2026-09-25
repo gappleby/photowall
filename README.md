@@ -90,6 +90,8 @@ All settings live in `config.json` in the project root.
 | `thumb_height` | `90` | Thumbnail height in pixels |
 | `board_cols` | `80` | Number of thumbnail columns on the wall |
 | `related_window_seconds` | `300` | Time window (±seconds) used to group photos taken at the same time |
+| `mtime_fallback` | `false` | For photos with no EXIF date, use the file's modified time for related-photo grouping and the caption. Leave off if your files were bulk-copied (their modified times will all be the copy date). |
+| `shuffle_wall` | `true` | Lay out the wall in a stable pseudo-random order so photos from the same shoot are scattered rather than side by side. Set to `false` to group the wall by folder (sorted path order). |
 | `fade_ms` | `2000` | Duration of every cross-fade transition in milliseconds |
 | `dwell_ms` | `4000` | How long each colour photo is held before the next cross-fade |
 | `show_caption` | `true` | Show folder name and date in the bottom polaroid panel |
@@ -198,6 +200,8 @@ cat > /share/homes/admin/photowall/config.json << 'EOF'
   "thumb_height": 90,
   "board_cols": 80,
   "related_window_seconds": 300,
+  "mtime_fallback": false,
+  "shuffle_wall": true,
   "fade_ms": 2000,
   "dwell_ms": 4000,
   "show_caption": true

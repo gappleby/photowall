@@ -41,6 +41,9 @@ export class WallCanvas {
     this._lastWorldY = 0;
     this._lastScale = 1;
 
+    // Thumbnail not drawn while the photo overlay covers it at a different shape
+    this._hiddenId = null;
+
     // Bind the redraw callback used by image load handlers
     this._onImageLoad = () => {
       this.draw(this._lastWorldX, this._lastWorldY, this._lastScale);
@@ -92,7 +95,7 @@ export class WallCanvas {
     for (let row = rowStart; row <= rowEnd; row++) {
       for (let col = colStart; col <= colEnd; col++) {
         const thumb = this._gridIndex.get(`${col},${row}`);
-        if (!thumb) continue;
+        if (!thumb || thumb.id === this._hiddenId) continue;
 
         const screenX  = (thumb.x - worldX) * scale;
         const screenY  = (thumb.y - worldY) * scale;
@@ -137,8 +140,8 @@ export class WallCanvas {
    */
   getThumbnailAt(wx, wy) {
     const board = this._board;
-    const col = Math.floor(wx / board.thumb_w);
-    const row = Math.floor(wy / board.thumb_h);
+    const col = Math.floor(wx / (board.cell_w ?? board.thumb_w));
+    const row = Math.floor(wy / (board.cell_h ?? board.thumb_h));
 
     // Try exact cell first
     const exact = this._gridIndex.get(`${col},${row}`);
@@ -188,6 +191,15 @@ export class WallCanvas {
       x: thumb.x + thumb.w / 2,
       y: thumb.y + thumb.h / 2,
     };
+  }
+
+  /**
+   * Skips drawing one thumbnail (null to show all). Used while the zoomed photo
+   * overlay is reshaped to the photo's aspect ratio and no longer covers the cell.
+   * @param {string|null} id
+   */
+  setHiddenId(id) {
+    this._hiddenId = id;
   }
 
   /**

@@ -124,6 +124,9 @@ body {
   pointer-events: none;
   z-index: 10;
   overflow: hidden;
+  /* Own white polaroid border, so the frame still looks right when reshaped away
+     from the canvas polaroid underneath */
+  background: #fff;
 }
 
 /* Clips Ken Burns transforms to the photo area (excludes polaroid borders). */
